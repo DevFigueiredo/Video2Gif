@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VideoToGif</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        margin: 0;
+        padding: 24px;
+        max-width: 860px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 22px;
+      }
+      p {
+        margin: 0 0 16px;
+        opacity: 0.9;
+      }
+      form {
+        display: grid;
+        gap: 12px;
+        padding: 16px;
+        border: 1px solid rgba(127, 127, 127, 0.35);
+        border-radius: 12px;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      label {
+        display: grid;
+        gap: 6px;
+        font-size: 13px;
+        opacity: 0.95;
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(127, 127, 127, 0.35);
+        background: transparent;
+      }
+      button {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      button[disabled] {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      #status {
+        white-space: pre-wrap;
+        font-size: 13px;
+        opacity: 0.9;
+      }
+      #result {
+        display: none;
+        margin-top: 16px;
+        padding: 16px;
+        border: 1px solid rgba(127, 127, 127, 0.35);
+        border-radius: 12px;
+      }
+      #preview {
+        max-width: 100%;
+        height: auto;
+        display: block;
+        border-radius: 8px;
+        margin-top: 12px;
+        border: 1px solid rgba(127, 127, 127, 0.25);
+      }
+      .hint {
+        font-size: 12px;
+        opacity: 0.8;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>VideoToGif</h1>
+    <p>Escolha um vídeo e gere um GIF usando <code>ffmpeg</code> localmente.</p>
+
+    <form id="form">
+      <label>
+        Vídeo
+        <input id="video" name="video" type="file" accept="video/*" required />
+        <span class="hint">O arquivo é enviado para o servidor local (localhost).</span>
+      </label>
+
+      <div class="row">
+        <label>
+          Largura (px)
+          <input name="width" type="number" min="1" value="480" />
+        </label>
+        <label>
+          FPS
+          <input name="fps" type="number" min="1" value="15" />
+        </label>
+      </div>
+
+      <div class="row">
+        <label>
+          Início (opcional)
+          <input name="start" type="text" placeholder="00:00:02 ou 2.5" />
+        </label>
+        <label>
+          Duração (opcional)
+          <input name="duration" type="text" placeholder="3 ou 00:00:03" />
+        </label>
+      </div>
+
+      <div class="row">
+        <label>
+          Loop
+          <select name="loop">
+            <option value="0" selected>Infinito</option>
+            <option value="1">Sem loop</option>
+          </select>
+        </label>
+        <label>
+          Ação
+          <button id="submit" type="submit">Converter</button>
+        </label>
+      </div>
+
+      <div id="status"></div>
+    </form>
+
+    <div id="result">
+      <div><strong>Pronto.</strong> Baixe ou visualize o GIF:</div>
+      <a id="download" href="#" download="output.gif">Download</a>
+      <img id="preview" alt="Prévia do GIF" />
+    </div>
+
+    <script>
+      const form = document.getElementById("form");
+      const status = document.getElementById("status");
+      const submit = document.getElementById("submit");
+      const result = document.getElementById("result");
+      const preview = document.getElementById("preview");
+      const download = document.getElementById("download");
+      const videoInput = document.getElementById("video");
+
+      let lastObjectUrl = null;
+
+      function setStatus(text) {
+        status.textContent = text || "";
+      }
+
+      function setBusy(busy) {
+        submit.disabled = busy;
+        submit.textContent = busy ? "Convertendo..." : "Converter";
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        setStatus("");
+        result.style.display = "none";
+
+        const file = videoInput.files && videoInput.files[0];
+        if (!file) {
+          setStatus("Selecione um vídeo.");
+          return;
+        }
+
+        const fd = new FormData(form);
+        fd.set("video", file, file.name);
+
+        setBusy(true);
+        setStatus("Enviando e convertendo... (pode demorar dependendo do vídeo)");
+
+        try {
+          const res = await fetch("/convert", { method: "POST", body: fd });
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(text || `Erro HTTP ${res.status}`);
+          }
+
+          const blob = await res.blob();
+          if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
+          lastObjectUrl = URL.createObjectURL(blob);
+
+          const baseName = (file.name || "output").replace(/\.[^/.]+$/, "");
+          download.download = `${baseName}.gif`;
+          download.href = lastObjectUrl;
+          preview.src = lastObjectUrl;
+          result.style.display = "block";
+          setStatus("");
+        } catch (err) {
+          setStatus(err && err.message ? err.message : String(err));
+        } finally {
+          setBusy(false);
+        }
+      });
+    </script>
+  </body>
+</html>
+

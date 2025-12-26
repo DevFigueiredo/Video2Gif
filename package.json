@@ -1,0 +1,26 @@
+{
+  "name": "video-to-gif",
+  "version": "0.1.0",
+  "description": "CLI em TypeScript para converter vídeos em GIF usando ffmpeg.",
+  "private": true,
+  "license": "UNLICENSED",
+  "bin": {
+    "videotogif": "bin/videotogif.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "convert": "npm run -s build && node dist/cli.js",
+    "web": "npm run -s build && node dist/server.js",
+    "help": "node dist/cli.js --help"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^2.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.12",
+    "typescript": "^5.6.3"
+  }
+}
