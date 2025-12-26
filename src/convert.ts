@@ -48,6 +48,39 @@ async function getDurationMs(inputPath: string): Promise<number | undefined> {
   }
 }
 
+function parseTimeToMs(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  // "SS" or "SS.mmm"
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const seconds = Number(trimmed);
+    if (!Number.isFinite(seconds) || seconds < 0) return undefined;
+    return Math.floor(seconds * 1000);
+  }
+
+  // "HH:MM:SS" or "HH:MM:SS.mmm"
+  const m = trimmed.match(/^(\d+):([0-5]?\d):([0-5]?\d)(\.\d+)?$/);
+  if (!m) return undefined;
+  const hours = Number(m[1]);
+  const minutes = Number(m[2]);
+  const seconds = Number(`${m[3]}${m[4] ?? ""}`);
+  if (![hours, minutes, seconds].every((n) => Number.isFinite(n) && n >= 0)) return undefined;
+  return Math.floor(((hours * 60 + minutes) * 60 + seconds) * 1000);
+}
+
+function computeEffectiveDurationMs(
+  fullDurationMs: number | undefined,
+  startMs: number | undefined,
+  explicitDurationMs: number | undefined
+): number | undefined {
+  if (explicitDurationMs != null) return explicitDurationMs;
+  if (fullDurationMs == null) return undefined;
+  if (startMs == null) return fullDurationMs;
+  return Math.max(0, fullDurationMs - startMs);
+}
+
 export async function convertVideoToGif(options: ConvertOptions): Promise<void> {
   await convertVideoToGifWithProgress(options, () => {});
 }
@@ -102,7 +135,10 @@ export async function convertVideoToGifWithProgress(
 
     const overwriteArgs = options.overwrite ? ["-y"] : ["-n"];
 
-    const durationMs = await getDurationMs(options.input);
+    const fullDurationMs = await getDurationMs(options.input);
+    const startMs = parseTimeToMs(options.start);
+    const explicitDurationMs = parseTimeToMs(options.duration);
+    const durationMs = computeEffectiveDurationMs(fullDurationMs, startMs, explicitDurationMs);
     await runFfmpegWithProgress(
       [
       ...overwriteArgs,
