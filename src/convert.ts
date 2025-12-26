@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ensureFfmpegAvailable, runFfmpeg } from "./ffmpeg";
+import { ensureFfmpegAvailable, runCommand, runFfmpeg, runFfmpegWithProgress } from "./ffmpeg";
 
 export type ConvertOptions = {
   input: string;
@@ -14,6 +14,11 @@ export type ConvertOptions = {
   loop: 0 | 1;
 };
 
+export type ConvertProgress =
+  | { phase: "palette"; percent: number }
+  | { phase: "encode"; percent: number; outTimeMs?: number; durationMs?: number }
+  | { phase: "done"; percent: number };
+
 function fileExists(p: string): boolean {
   try {
     fs.accessSync(p, fs.constants.F_OK);
@@ -23,7 +28,34 @@ function fileExists(p: string): boolean {
   }
 }
 
+async function getDurationMs(inputPath: string): Promise<number | undefined> {
+  try {
+    const res = await runCommand("ffprobe", [
+      "-v",
+      "error",
+      "-show_entries",
+      "format=duration",
+      "-of",
+      "default=noprint_wrappers=1:nokey=1",
+      inputPath
+    ]);
+    if (res.code !== 0) return undefined;
+    const seconds = Number(String(res.stdout).trim());
+    if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+    return Math.floor(seconds * 1000);
+  } catch {
+    return undefined;
+  }
+}
+
 export async function convertVideoToGif(options: ConvertOptions): Promise<void> {
+  await convertVideoToGifWithProgress(options, () => {});
+}
+
+export async function convertVideoToGifWithProgress(
+  options: ConvertOptions,
+  onProgress: (p: ConvertProgress) => void
+): Promise<void> {
   await ensureFfmpegAvailable();
 
   if (!fileExists(options.input)) {
@@ -53,6 +85,7 @@ export async function convertVideoToGif(options: ConvertOptions): Promise<void> 
   if (options.duration) commonSeekArgs.push("-t", options.duration);
 
   try {
+    onProgress({ phase: "palette", percent: 0 });
     await runFfmpeg([
       "-y",
       "-v",
@@ -65,10 +98,13 @@ export async function convertVideoToGif(options: ConvertOptions): Promise<void> 
       `${baseFilters},palettegen=stats_mode=diff`,
       palettePath
     ]);
+    onProgress({ phase: "palette", percent: 10 });
 
     const overwriteArgs = options.overwrite ? ["-y"] : ["-n"];
 
-    await runFfmpeg([
+    const durationMs = await getDurationMs(options.input);
+    await runFfmpegWithProgress(
+      [
       ...overwriteArgs,
       "-v",
       "error",
@@ -83,7 +119,19 @@ export async function convertVideoToGif(options: ConvertOptions): Promise<void> 
       "-loop",
       String(options.loop),
       options.output
-    ]);
+      ],
+      (p) => {
+        const outTimeMs = p.outTimeMs;
+        const encodePct =
+          durationMs && outTimeMs != null && durationMs > 0
+            ? Math.max(0, Math.min(1, outTimeMs / durationMs))
+            : undefined;
+        const percent = encodePct != null ? Math.round(10 + encodePct * 90) : 10;
+        onProgress({ phase: "encode", percent, outTimeMs, durationMs });
+      }
+    );
+
+    onProgress({ phase: "done", percent: 100 });
   } finally {
     try {
       fs.unlinkSync(palettePath);
@@ -92,4 +140,3 @@ export async function convertVideoToGif(options: ConvertOptions): Promise<void> 
     }
   }
 }
-
